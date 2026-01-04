@@ -1,1 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Family Tree App</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: 100vh;
+  }
+
+  aside {
+    padding: 16px;
+    border-right: 1px solid #ddd;
+    overflow-y: auto;
+  }
+
+  main {
+    position: relative;
+    overflow: hidden;
+    background: #fafafa;
+  }
+
+  h2 {
+    margin-top: 0;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  input, select, button {
+    width: 100%;
+    padding: 6px;
+    margin-top: 4px;
+  }
+
+  button {
+    margin-top: 12px;
+    cursor: pointer;
+  }
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .node rect {
+    fill: white;
+    stroke: #333;
+    rx: 6;
+  }
+
+  .node text {
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  .link {
+    stroke: #555;
+    fill: none;
+  }
+
+  .toolbar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: white;
+    border: 1px solid #ddd;
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <h2>Add person</h2>
+
+  <label>First name</label>
+  <input id="firstName" />
+
+  <label>Last name</label>
+  <input id="lastName" />
+
+  <label>Gender</label>
+  <select id="gender">
+    <option value="male">Male</option>
+    <option value="female">Female</option>
+  </select>
+
+  <label>Birth date</label>
+  <input id="birth" placeholder="YYYY" />
+
+  <label>Death date</label>
+  <input id="death" placeholder="YYYY (optional)" />
+
+  <label>Parent (optional)</label>
+  <select id="parent"></select>
+
+  <button onclick="addPerson()">Add person</button>
+</aside>
+
+<main>
+  <div class="toolbar">
+    <button onclick="exportSVG()">Export SVG</button>
+    <button onclick="exportPDF()">Export PDF</button>
+  </div>
+
+  <svg id="tree"></svg>
+</main>
+
+<script>
+let people = [];
+let idCounter = 1;
+
+const svg = document.getElementById("tree");
+
+function addPerson() {
+  const person = {
+    id: idCounter++,
+    first: firstName.value,
+    last: lastName.value,
+    gender: gender.value,
+    birth: birth.value,
+    death: death.value,
+    parent: parent.value || null
+  };
+
+  people.push(person);
+  updateParentOptions();
+  renderTree();
+}
+
+function updateParentOptions() {
+  parent.innerHTML = '<option value="">— none —</option>';
+  people.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = `${p.first} ${p.last}`;
+    parent.appendChild(opt);
+  });
+}
+
+function renderTree() {
+  svg.innerHTML = "";
+
+  const levels = {};
+  function getLevel(p) {
+    if (!p.parent) return 0;
+    const parent = people.find(x => x.id == p.parent);
+    return 1 + getLevel(parent);
+  }
+
+  people.forEach(p => {
+    const level = getLevel(p);
+    levels[level] = levels[level] || [];
+    levels[level].push(p);
+  });
+
+  const nodeWidth = 140;
+  const nodeHeight = 50;
+  const levelGap = 100;
+  const nodeGap = 30;
+
+  const positions = {};
+
+  Object.keys(levels).forEach(level => {
+    levels[level].forEach((p, i) => {
+      positions[p.id] = {
+        x: i * (nodeWidth + nodeGap) + 40,
+        y: level * levelGap + 40
+      };
+    });
+  });
+
+  // Draw links
+  people.forEach(p => {
+    if (p.parent) {
+      const from = positions[p.parent];
+      const to = positions[p.id];
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d",
+        `M${from.x + nodeWidth/2},${from.y + nodeHeight}
+         V${to.y}
+         H${to.x + nodeWidth/2}`);
+      path.setAttribute("class", "link");
+      svg.appendChild(path);
+    }
+  });
+
+  // Draw nodes
+  people.forEach(p => {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("class", "node");
+
+    const { x, y } = positions[p.id];
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
+    rect.setAttribute("width", nodeWidth);
+    rect.setAttribute("height", nodeHeight);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", x + 8);
+    text.setAttribute("y", y + 18);
+    text.textContent = `${p.first} ${p.last}`;
+
+    const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    sub.setAttribute("x", x + 8);
+    sub.setAttribute("y", y + 34);
+    sub.textContent = `${p.birth || ""}${p.death ? " – " + p.death : ""}`;
+
+    g.appendChild(rect);
+    g.appendChild(text);
+    g.appendChild(sub);
+
+    svg.appendChild(g);
+  });
+}
+
+function exportSVG() {
+  const serializer = new XMLSerializer();
+  const source = serializer.serializeToString(svg);
+  const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "family-tree.svg";
+  a.click();
+}
+
+function exportPDF() {
+  const win = window.open("");
+  win.document.write(svg.outerHTML);
+  win.print();
+}
+</script>
+
+</body>
+</html>
 
